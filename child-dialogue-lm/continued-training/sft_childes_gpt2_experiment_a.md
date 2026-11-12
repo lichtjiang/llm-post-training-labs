@@ -244,7 +244,7 @@ The model predicts:
 So the fundamental loss is simply:
 
 ```math
-L = -\sum_t \log P(x_t\mid x_{<t})
+L = -\sum_t \log P(x_t\mid x_{\text{<}t})
 ```
 
 which is standard cross-entropy loss.

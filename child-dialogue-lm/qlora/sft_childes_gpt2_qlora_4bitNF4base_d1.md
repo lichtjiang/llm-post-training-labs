@@ -81,7 +81,9 @@ The LoRA matrices themselves remain trainable in higher precision.
 
 For each MLP layer:
 
-$$ W' \approx \operatorname{dequant}(W_q) + \frac{\alpha}{r}BA $$
+```math 
+W' \approx \text{dequant}(W_q) + \frac{\alpha}{r}BA
+```
 
 with:
 
@@ -195,7 +197,9 @@ The important thing is that we're not quantizing the trainable LoRA matrices.
 
 Conceptually, C2 does:
 
-$$ y = (W + \Delta W)x $$
+$$
+y = (W + \Delta W)x
+$$
 
 where
 
@@ -203,9 +207,9 @@ $$ \Delta W = \frac{\alpha}{r}BA $$
 
 D1 does approximately:
 
-$$ y = (\operatorname{dequant}(W_q) + \Delta W)x $$
+$$ y = (\text{dequant}(W_q) + \Delta W)x $$
 
-where W_q is the 4-bit NF4 representation of the frozen GPT-2 weights.
+where $W_q$ is the 4-bit NF4 representation of the frozen GPT-2 weights.
 
 So D1 introduces some quantization error into the base model, but the model can still learn the task through the LoRA update.
 

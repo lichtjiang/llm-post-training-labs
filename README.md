@@ -1,6 +1,6 @@
 # LLM Post Training Labs
 
-This repo is a progressive lab series for learning how to fine-tune and post-train LLMs. To make these experiments more approachable and able to be trained locally on a computer with a CPU and a 16GB RAM, a 124M-parameter GPT-2 model is used as a base model. In the current version, we will learn the following topics through hands-on: full-sequence supervised fine-tuning (SFT) (continued training), response-only SFT, parameter efficient fine-tuning (PEFT) with LoRA and QLoRA, adding task-specific head for binary sentiment classification and Named Entity Recognition (NER).
+This repo is a progressive lab series for learning how to fine-tune and post-train LLMs. To make these experiments more approachable and able to be trained locally on a computer with a CPU and a 16GB RAM, a 124M-parameter GPT-2 model is used as a base model. In the current version, we will learn the following topics through hands-on: full-sequence supervised fine-tuning (SFT) (continued training), response-only SFT, parameter efficient fine-tuning (PEFT) with LoRA and QLoRA, adding task-specific head for binary sentiment classification and Named Entity Recognition (NER), and applying reinforcement learning in different ways (DPO, GRPO, and PPO) to fine tuning a GPT-2 based model for a conditional sentiment continuation task, going beyond pattern matching and to align a model with human preference.
 
 ## Base Model
 
@@ -229,7 +229,7 @@ Each example is an English sentence with a class label (`0` for negative and `1`
 "the greatest musicians", 1
 ```
 
-We would use this dataset for adapting GPT-2's representations to a binary sentiment classification by adding a new task-specific head.
+We would use this dataset 1) for adapting GPT-2's representations to a binary sentiment classification by adding a new task-specific head; and 2) to create four new datasets for a text-completion task, dubbed "conditional sentiment continuation" – complete a review in a requested sentiment, "positive" or "negative", one for each of these four post-training methods: SFT, DPO, GRPO, and PPO.
 
 #### Credits
 
@@ -280,7 +280,7 @@ This dataset is a Parquet conversion of the original WNT-17 dataset, originally 
 
 ## Overview
 
-### "Build SFT from First Principles"
+### "Post-Training from First Principles"
 
 **Phase 1 — Establish the Pretrained GPT-2 Baseline**
 
@@ -341,10 +341,11 @@ Adult: What are you doing?
 Child: I'm playing.
 ```
 
-and the training objective remains ordinary next-token prediction:
+and the training objective remains ordinary next-token prediction:\
+
 
 ```math
-\mathcal{L} = -\sum_t \log P(x_t\mid x_{<t})
+\mathcal{L} = -\sum_t \log P(x_t\mid x_{\text{<}t})
 ```
 
 We aren't introducing a new loss function.
@@ -484,7 +485,282 @@ The third experiment is to demonstrate a mistake that some beginners may tend to
 
 ("Experiment E2")
 
-This is the final phase in the current version of the repo. It is a 13-way token level classification for NER.
+This is a 13-way token level classification for NER.
+
+**Phase 9 - Conditional Sentiment Continuation with RL** 
+
+("Experiments R1, R2, R3 and R4")
+
+In this phase, we designed an interesting small task, "conditional sentiment continuation", to study different reinforcement learning approaches. The task is defined as follows.
+
+  Create a text generation model, show it an incomplete reivew and ask the model to complete the review in a requested sentiment, which can be either "positive" or "negative". In other words, we expect from the model: given this beginning of a review, continue writing in a specified sentiment.
+
+**Note**: the partial review given in a prompt, together with the generated continuation, is taken into consideration as a whole to determine its single polarity, "positive" or "negative".
+
+**Prompt format**
+```
+Sentiment: {sentiment}\n
+Continue the following review:\n
+{prefix}
+```
+where {sentiment} can be either "positive" or "negative"; {prefix} is an incomplete review.
+
+As we can see, the prompt contains two pieces of information:
+
+- The sentiment the model should express.
+- The beginning of the text it should continue.
+
+The completion is the remaining part of the original review.
+
+Here are two prompt examples with generated completion:
+
+```
+Sentiment: positive
+Continue the following review:
+that loves its characters and communicates something
+Completion:  very special about humankind
+
+Sentiment: negative
+Continue the following review:
+that loves its characters and communicates something
+Completion:  that is really, truly unpleasant
+```
+
+As previously mentioned in ["Dataset and Tasks"](https://github.com/lichtjiang/llm-post-training-labs#dataset-and-tasks) section, we are going to create both train and validation datasets from Stanford NLP SST-2.
+
+The labs in this phase progress like this: we would first build a base policy model, `R1`, by SFT-tuning the Vanilla GPT-2 model, which is our baseline model, `R0`. By SFT, we learn the pattern how to continue in the requested sentiment. (see ["R1"](https://github.com/lichtjiang/llm-post-training-labs/blob/main/conditional-sentiment-continuation/sft/R1.md))
+
+Later, we want to improve `R1`'s ability to follow the requested sentiment using DPO (Direct Preference Optimization), GRPO (Group Relative Policy Optimization), and PPO (Proximal Policy Optimization).
+
+The idea behind this is that we shouldn't ask `RL` to teach GPT-2 how to write from scratch. We should first give it a reasonable generation capability (SFT-tuned `R1`) and a style of review, then use the sentiment reward to improve its behavior.
+
+Thus, next, we create a preference pairs dataset to fine-tune `R1` using DPO to obtain our second model in this phase, `R2`. Bascially, we use `R1` to create multiple candidate continuations and then `E1-1_2logits` ([Experiment E1-1_2logits](https://github.com/lichtjiang/llm-post-training-labs/blob/main/binary-sentiment-classification/sft_sst2_gpt2_E1-1.md)) will be used as a sentiment classifier to determine the polarity of each, based on which 'chosen' and 'rejected' pairs are created for a prompt. This preference pairs dataset is then used to train `R2` using DPO with `R1` as the reference model. As a result, `R2` learns its policies from offline experiences via DPO. By DPO, we learn which continuation is preferable given a requested sentiment. (see ["R2"](https://github.com/lichtjiang/llm-post-training-labs/blob/main/conditional-sentiment-continuation/dpo/R2.md))
+
+**Note**: For brevity, we use `E1` and `E1-1_2logits` interchangeably in phase 9 notebooks and markdown files.
+
+```
+Same prompt
+   ├── candidate A → reward 0.92
+   └── candidate B → reward 0.18
+
+chosen = A
+rejected = B
+```
+
+Then, we use `R1` as the policy model and `E1-1_2logits` as the reward model to construct a reward function (`reward_funcs`) that is required by `GRPOTrainer`, and run the trainer to obtain `R3` model by learning from rewards given to multiple completions during training. By GRPO, online reward-driven training, we learn from groups of generated continuations. (see ["R3"](https://github.com/lichtjiang/llm-post-training-labs/blob/main/conditional-sentiment-continuation/grpo/R3.md))
+
+```
+Same prompt
+   ├── completion A → reward 0.92
+   ├── completion B → reward 0.18
+   ├── completion C → reward 0.75
+   └── completion D → reward 0.31
+
+GRPO calculates relative advantages.
+```
+
+Finally, we apply online RL training using PPO to `R1` and learn from generated completions and their rewards. Similar reward-generation process as DPO, but PPO also uses a value model and its own policy optimization machinery. (see ["R4"](https://github.com/lichtjiang/llm-post-training-labs/blob/main/conditional-sentiment-continuation/ppo/R4.md))
+
+```
+prompt → policy → completion
+                  ↓
+            reward model
+                  ↓
+             PPO update
+```
+
+This means we can reuse the same SFT checkpoint (`R1`) and sentiment reward model (`E1-1_2logits`) across all three experiments: `R2`, `R3`, and `R4`.
+
+**Note**: Just as we already pointed out ealier that we should take prefix and generated suffix (continuation) as a whole in polarity judgement, we should feed the reward model `E1` the entire resulting text as well, not just the generated suffix (continuation).
+
+For example:
+```
+Sentiment: positive
+
+Prefix:
+The restaurant was
+
+Generated continuation:
+absolutely wonderful. The food was delicious.
+```
+
+The reward model should evaluate:
+```
+The restaurant was absolutely wonderful.
+The food was delicious.
+```
+
+It should return the probability of positive sentiment.
+
+For a target sentiment `s`, a simple reward is:
+```math
+R(x,s)=P_{\text{classifier}}(s\mid x)
+```
+
+where `x` is the concatenated prefix and generated continuation.
+
+This gives us a continuous reward between 0 and 1, which is convenient for GRPO and PPO.
+
+**One caution**: a sentiment classifier is an imperfect reward model. GPT-2 might learn to insert obvious sentiment words simply to increase its score, even if the continuation becomes repetitive or unnatural. That's not necessarily a failure of the experiment—it is an excellent opportunity to observe _reward hacking_.
+
+We should therefore measure more than sentiment accuracy:
+- Does the continuation express the requested sentiment?
+- Does it remain relevant to the prefix?
+- Is it reasonably fluent?
+- Does it become repetitive?
+- Does it simply repeat sentiment-bearing words?
+
+
+As such, phase 9 constructs a very nice experiment matrix.
+
+**R0 — Baseline**
+
+Generate from vanilla GPT-2.
+```
+Prompt → GPT-2 → completion
+```
+Measure sentiment.
+
+**R1 — SFT**
+
+SFT GPT-2 on:
+```
+Sentiment: positive
+Text: ...
+```
+and
+```
+Sentiment: negative
+Text: ...
+```
+Now we have a conditional generator.
+
+**R2 — DPO**
+Construct:
+```
+prompt
+chosen
+rejected
+```
+and train:
+```
+DPOTrainer(...)
+```
+
+Measure:
+```
+sentiment accuracy
+generation quality
+length
+repetition
+```
+
+**R3 — GRPO**
+
+Now throw away chosen/rejected.
+
+Give GRPO:
+```
+prompt
+```
+and define:
+```
+reward = sentiment_probability
+```
+
+Generate, say, 4 completions:
+```
+                 ┌─ completion 1 → .91
+prompt ──────────┼─ completion 2 → .12
+                 ├─ completion 3 → .87
+                 └─ completion 4 → .31
+```
+Then watch the policy shift.
+
+This is probably the best single experiment for demonstrating what RL-style post-training actually means.
+
+**R4 — PPO**
+
+Finally introduce the traditional RLHF machinery.
+```
+policy GPT-2
+reference GPT-2
+reward model
+value model
+PPO
+```
+
+Above can also be summarized as follows:
+```
+Stage	  Dataset/model	                                  Purpose
+R0	    GPT-2 base	                                    Baseline generation
+R1	    Transformed SST-2	                              SFT conditional generator
+R2	    SFT model + generated preference pairs	        offline preference optimization with DPO
+R3	    SFT model + prompt-only data + reward function  online group-relative policy optimization with GRPO
+R4	    SFT model + reward model + value model          PPO
+```
+
+The same sentiment-generation task runs through DPO → GRPO → PPO.
+
+That gives us an unusually clean comparison:
+
+**DPO**
+
+"Here are two possible answers; I prefer this one."
+
+**GRPO**
+
+"Generate several answers; I'll tell you how good each one is."
+
+**PPO**
+
+"Generate an answer; here's its reward; now explicitly optimize the policy while constraining it against the reference."
+
+**One caveat**: DPO is not technically reinforcement learning in the same online sense as PPO/GRPO. It is generally classified as offline preference optimization. TRL itself distinguishes DPO from the online GRPO/PPO family. But putting DPO alongside them is pedagogically excellent because it lets us see the relationship between preference learning and RLHF.
+
+It is worth noticing that stage names and model names are used interchangeably for this phase. So, e.g., when we say `R1` model, we refer to the SFT model trained as a result of stage `R1`. Thus we can say that each of these three models `R2`, `R3`, and `R4` are trained using `R1` as the policy model initially.
+
+
+Overall, we can picture phase 1 through phase 9 like the following:
+```
+                    GPT-2 Post-Training
+
+                         GPT-2
+                           │
+             ┌─────────────┴─────────────┐
+             │                           │
+           SFT                      add task heads
+             │                       
+             ▼
+     Conditional generation
+             │
+             ├───────────────┐
+             │               │
+            DPO             GRPO
+             │               │
+             │               │
+             └───────┬───────┘
+                     │
+                    PPO
+                     │
+                     ▼
+              Classical RLHF
+```
+
+
+One final note: GPT-2 124M is small, and our goal is to study mechanics of RL in post-training rather than build a high-quality review-writing model.
+
+For a more comprehensive comparison of the three RL methods used in this phase (DPO, GRPO, and PPO) along the following dimensions, please read [DPO vs GRPO vs PPO](https://github.com/lichtjiang/llm-post-training-labs/blob/main/conditional-sentiment-continuation/DPOvsGRPOvsPPO.md)
+
+- Models involved (including models used to create dataset if exist)
+- What is used as reward or training signal?
+- Policy optimization and learning objectives
+- How do we turn maximizing long-term cumulative reward into a loss function?
+- Training loop/pipeline
+- Data used in training
+- Metrics (optimization + reward + qualitative/task-specific)
+- Stability
+- Convergence speed and computational cost
 
 
 ### Overall learning path:
@@ -511,7 +787,7 @@ see ["Dataset and Tasks"](https://github.com/lichtjiang/llm-post-training-labs#d
   
   8. "Experiment D2", 4-bit NF4 QloRA targeting all MLP projections and attn layers, [README](https://github.com/lichtjiang/llm-post-training-labs/blob/main/child-dialogue-lm/qlora/sft_childes_gpt2_qlora_4bitNF4base_d2.md)
 
-#### Building a Binary Sentiment Classification Model Using SST-2 Dataset (Stanford Sentiment Treebank
+#### Building a Binary Sentiment Classification Model Using SST-2 Dataset (Stanford Sentiment Treebank)
 
 see ["Dataset and Tasks"](https://github.com/lichtjiang/llm-post-training-labs#dataset=and-tasks) section above
 
@@ -527,6 +803,16 @@ See ["Dataset and Tasks"](https://github.com/lichtjiang/llm-post-training-labs#d
 
   12.  "Experiment E2", NER classification, [README](https://github.com/lichtjiang/llm-post-training-labs/blob/main/named-entity-recognition/sft_wnut17_gpt2_E2.md)
 
+#### Building a Conditional Sentiment Continuation Model using SST-2 Dataset
+
+  13. "Experiment R1", SFT, [R1](https://github.com/lichtjiang/llm-post-training-labs/blob/main/conditional-sentiment-continuation/sft/R1.md)
+   
+  14.  "Experiment R2", DPO, [R2](https://github.com/lichtjiang/llm-post-training-labs/blob/main/conditional-sentiment-continuation/dpo/R2.md)
+  
+  15.  "Experiment R3", DRPO, [R3](https://github.com/lichtjiang/llm-post-training-labs/blob/main/conditional-sentiment-continuation/grpo/R3.md)
+
+  16.  "Experiment R4", PPO, [R4](https://github.com/lichtjiang/llm-post-training-labs/blob/main/conditional-sentiment-continuation/ppo/R4.md)
+
 ## Learning Objectives
 
   - Preprocessing and preparing datasets
@@ -538,25 +824,33 @@ See ["Dataset and Tasks"](https://github.com/lichtjiang/llm-post-training-labs#d
   - Understanding QLoRA
   - Adding task-specific heads
   - Fine-tuning GPT-2 for binary classification and token-level multi-NER-label classification
+  - Fine-tuning with online (GRPO, PPO) and offline (DPO) reinforcement learning approaches for a conditional sentiment continuation task
 
-Note: it is worth re-stressing that our major goal is not to train hard for a frontier model; instead, we want to learn and study SFT machinery through these hands-on labs.
+Note: it is worth re-stressing that our major goal is not to train hard for a frontier model; instead, we want to learn and study SFT & RL machinery through these hands-on labs.
 
 ## Repository Structure
 
-```text
+```
 .
 ├── README.md
+├── binary-sentiment-classification
+│   ├── sft_sst2_gpt2_E1-1.md
+│   ├── sft_sst2_gpt2_E1-1_1logit.html
+│   ├── sft_sst2_gpt2_E1-1_1logit.ipynb
+│   ├── sft_sst2_gpt2_E1-1_1logit.py
+│   ├── sft_sst2_gpt2_E1-1_2logits.html
+│   ├── sft_sst2_gpt2_E1-1_2logits.ipynb
+│   ├── sft_sst2_gpt2_E1-1_2logits.py
+│   ├── sft_sst2_gpt2_E1-1_3in1.py
+│   ├── sft_sst2_gpt2_E1-1_regression.html
+│   ├── sft_sst2_gpt2_E1-1_regression.ipynb
+│   └── sft_sst2_gpt2_E1-1_regression.py
 ├── child-dialogue-lm
 │   ├── continued-training
 │   │   ├── sft_childes_gpt2_experiment_a.html
 │   │   ├── sft_childes_gpt2_experiment_a.ipynb
 │   │   ├── sft_childes_gpt2_experiment_a.md
 │   │   └── sft_childes_gpt2_experiment_a.py
-│   ├── response-only-sft
-│   │   ├── sft_childes_gpt2_experiment_b.html
-│   │   ├── sft_childes_gpt2_experiment_b.ipynb
-│   │   ├── sft_childes_gpt2_experiment_b.md
-│   │   └── sft_childes_gpt2_experiment_b.py
 │   ├── lora
 │   │   ├── sft_childes_gpt2_lora_c1.html
 │   │   ├── sft_childes_gpt2_lora_c1.ipynb
@@ -572,27 +866,44 @@ Note: it is worth re-stressing that our major goal is not to train hard for a fr
 │   │   ├── sft_childes_gpt2_lora_c3.ipynb
 │   │   ├── sft_childes_gpt2_lora_c3.md
 │   │   └── sft_childes_gpt2_lora_c3.py
-│   └── qlora
-│       ├── sft_childes_gpt2_qlora_4bitNF4base_d1.html
-│       ├── sft_childes_gpt2_qlora_4bitNF4base_d1.ipynb
-│       ├── sft_childes_gpt2_qlora_4bitNF4base_d1.md
-│       ├── sft_childes_gpt2_qlora_4bitNF4base_d1.py
-│       ├── sft_childes_gpt2_qlora_4bitNF4base_d2.html
-│       ├── sft_childes_gpt2_qlora_4bitNF4base_d2.ipynb
-│       ├── sft_childes_gpt2_qlora_4bitNF4base_d2.md
-│       └── sft_childes_gpt2_qlora_4bitNF4base_d2.py
-├── binary-sentiment-classification
-│   ├── sft_sst2_gpt2_E1-1.md
-│   ├── sft_sst2_gpt2_E1-1_1logit.html
-│   ├── sft_sst2_gpt2_E1-1_1logit.ipynb
-│   ├── sft_sst2_gpt2_E1-1_1logit.py
-│   ├── sft_sst2_gpt2_E1-1_2logits.html
-│   ├── sft_sst2_gpt2_E1-1_2logits.ipynb
-│   ├── sft_sst2_gpt2_E1-1_2logits.py
-│   ├── sft_sst2_gpt2_E1-1_3in1.py
-│   ├── sft_sst2_gpt2_E1-1_regression.html
-│   ├── sft_sst2_gpt2_E1-1_regression.ipynb
-│   └── sft_sst2_gpt2_E1-1_regression.py
+│   ├── qlora
+│   │   ├── sft_childes_gpt2_qlora_4bitNF4base_d1.html
+│   │   ├── sft_childes_gpt2_qlora_4bitNF4base_d1.ipynb
+│   │   ├── sft_childes_gpt2_qlora_4bitNF4base_d1.md
+│   │   ├── sft_childes_gpt2_qlora_4bitNF4base_d1.py
+│   │   ├── sft_childes_gpt2_qlora_4bitNF4base_d2.html
+│   │   ├── sft_childes_gpt2_qlora_4bitNF4base_d2.ipynb
+│   │   ├── sft_childes_gpt2_qlora_4bitNF4base_d2.md
+│   │   └── sft_childes_gpt2_qlora_4bitNF4base_d2.py
+│   └── response-only-sft
+│       ├── sft_childes_gpt2_experiment_b.html
+│       ├── sft_childes_gpt2_experiment_b.ipynb
+│       ├── sft_childes_gpt2_experiment_b.md
+│       └── sft_childes_gpt2_experiment_b.py
+├── conditional-sentiment-continuation
+│   ├── DPOvsGRPOvsPPO.md
+│   ├── dpo
+│   │   ├── R2.md
+│   │   ├── R2.training.log
+│   │   ├── R2.training.metrics
+│   │   ├── conditional_sentiment_continuation_DPO_R2.ipynb
+│   │   ├── conditional_sentiment_continuation_preference_dataset_creation_for_DPO_R2.ipynb
+│   │   └── r2_preference_dataset
+│   │       ├── train.jsonl
+│   │       ├── train_diagnostics.jsonl
+│   │       ├── validation.jsonl
+│   │       └── validation_diagnostics.jsonl
+│   ├── grpo
+│   │   ├── R3.md
+│   │   ├── R3.training.log
+│   │   └── conditional_sentiment_continuation_GRPO_R3.ipynb
+│   ├── ppo
+│   │   ├── R4.md
+│   │   ├── r4_training_metrics.jsonl
+│   │   └── conditional_sentiment_continuation_PPO_R4.ipynb
+│   └── sft
+│       ├── R1.md
+│       └── conditional_sentiment_continuation_sft_R1.ipynb
 └── named-entity-recognition
     ├── sft_wnut17_gpt2_E2.html
     ├── sft_wnut17_gpt2_E2.ipynb
@@ -616,6 +927,12 @@ Another fair point behind this is that the exact versions of dependencies depend
 
 So, we are free to use tools of our choice to create an environment to run these experiments, uv, conda, venv, and pip. In most cases, just install the latest version of a package we find in "import" section of a script.
 
+Exception: We use Hugging Face TRL in phase 9. Since TRL evolves fast, we list below the main dependencies that phase 9 was last time tested against (We use `DPOTrainer` and `GRPOTrainer` but not `PPOTrainer`, which was dropped from TRL from as early as v1.13.0, if I remember correctly.).
+```
+TRL: 1.17.1
+Transformers: 5.22.0
+Accelerate: 1.15.0
+```
 ## Installation and How to Run
 
 For most experiments, four files are provided: a standalone Python script (`.py`), a Notebook (`.ipynb`), an HTML file that includes both code and output, exported from Google Colab (`.html`), and a README markdown file (`.md`). 
@@ -852,6 +1169,71 @@ London          B-location
 last            O
 week            O
 .               O
+```
+
+### Conditional Sentiment Continuation
+
+The following shows both positive and negative continuations generated by Vanilla GPT-2, R1 (SFT), R2 (DPO), R3 (GRPO), and R4 (PPO) for the same prompt.
+
+**Prompt**
+```
+Sentiment: positive
+Continue the following review:
+that loves its characters and communicates something
+```
+
+and
+
+```
+Sentiment: negative
+Continue the following review:
+that loves its characters and communicates something
+```
+
+**R0 (Vanilla GPT-2) generation**
+```
+R0 - Positive:
+in a certain way that is different than what you'd think. I loved it to pieces, so many things are about them - like how much he has changed since his time with this ship (if
+
+
+R0 - Negative:
+new. i think they were trying to be funny but also not at all like a straight up lesbian comic that has people in it who are gay, or just really hot guys as opposed of being super
+```
+
+**R1 generation**
+```
+R1 - Positive:
+special
+
+R1 - Negative:
+rather weird and sad about human nature
+```
+
+**R2 generation**
+```
+R2 - Positive:
+uniquely magical
+
+R2 - Negative:
+offensive about women
+```
+
+**R3 generation**
+```
+R3 - Positive:
+very human about them
+
+R3 - Negative:
+that feels less like a movie
+```
+
+**R4 generation**
+```
+R4 - Positive:
+beautiful and genuine
+
+R4 - Negative:
+fundamentally creepy and frightening
 ```
 
 ## Limitations and Notes

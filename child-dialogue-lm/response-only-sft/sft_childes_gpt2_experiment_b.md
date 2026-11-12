@@ -77,7 +77,7 @@ This is generally called response-only loss masking.
 
 Then the loss becomes:
 
-$$ L = -\sum_{t \in \text{child response}} \log P(x_t\mid x_{<t}) $$
+$$ L = -\sum_{t \in \text{child response}} \log P(x_t\mid x_{\text{<}t}) $$
 
 That's much closer to what we mean by supervised fine-tuning for a conversational task. And this would make an excellent second experiment after we get the simplest version working.
 

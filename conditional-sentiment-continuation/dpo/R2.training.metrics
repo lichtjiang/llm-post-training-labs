@@ -1,0 +1,26 @@
+***** train metrics *****
+  epoch                    =        3.0
+  total_flos               =   135080GF
+  train_loss               =     0.6235
+  train_runtime            = 0:05:17.56
+  train_samples_per_second =     11.128
+  train_steps_per_second   =      1.398
+ [54/54 00:04]
+Training Loss	Validation Loss	Step	Entropy	Num Tokens	Logits/chosen	Logits/rejected	Mean Token Accuracy	Rewards/chosen	Rewards/rejected	Rewards/accuracies	Rewards/margins	Logps/chosen	Logps/rejected
+0.577419	0.667049	444	3.705582	211944.000000	2.077630	4.095727	0.417265	-0.034376	-0.094400	0.640432	0.060023	-20.600379	-21.808124
+***** eval metrics *****
+  eval_entropy             =   3.7056
+  eval_logits/chosen       =   2.0776
+  eval_logits/rejected     =   4.0957
+  eval_logps/chosen        = -20.6004
+  eval_logps/rejected      = -21.8081
+  eval_loss                =    0.667
+  eval_mean_token_accuracy =   0.4173
+  eval_num_tokens          = 211944.0
+  eval_rewards/accuracies  =   0.6404
+  eval_rewards/chosen      =  -0.0344
+  eval_rewards/margins     =     0.06
+  eval_rewards/rejected    =  -0.0944
+
+Final evaluation metrics:
+{'eval_loss': 0.6670494079589844, 'eval_entropy': 3.705582362634164, 'eval_num_tokens': 211944.0, 'eval_logits/chosen': 2.0776300515060804, 'eval_logits/rejected': 4.095727028379706, 'eval_mean_token_accuracy': 0.4172646792398559, 'eval_rewards/chosen': -0.034376457437045045, 'eval_rewards/rejected': -0.09439959030391441, 'eval_rewards/accuracies': 0.640432098949397, 'eval_rewards/margins': 0.060023133711958374, 'eval_logps/chosen': -20.600379484671134, 'eval_logps/rejected': -21.80812355324074}
