@@ -1,10 +1,10 @@
 # LLM Post Training Labs
 
-This repo is a progressive lab series for learning how to fine-tune and post-train LLMs. To make these experiments more approachable and able to be trained locally on a computer with a CPU and a 16GB RAM, a 124M-parameter GPT-2 model is used as a base model. In the current version, we will learn the following topics through hands-on: full-sequence supervised fine-tuning (SFT) (continued training), response-only SFT, parameter efficient fine-tuning (PEFT) with LoRA and QLoRA, adding task-specific head for binary sentiment classification and Named Entity Recognition (NER), and applying reinforcement learning in different ways (DPO, GRPO, and PPO) to fine tuning a GPT-2 based model for a conditional sentiment continuation task, going beyond pattern matching and to align a model with human preference.
+This repo is a progressive lab series for learning how to fine-tune and post-train LLMs. To make these experiments more approachable and able to be trained locally on a computer with a CPU and a 16GB RAM, a 124M-parameter GPT-2 model is used as a base model. In the current version, we will learn the following topics through hands-on: full-sequence supervised fine-tuning (SFT) (continued training), response-only SFT, parameter efficient fine-tuning (PEFT) with LoRA and QLoRA, adding task-specific heads for binary sentiment classification and Named Entity Recognition (NER), and applying reinforcement learning in different ways (DPO, GRPO, and PPO) to a GPT-2 based SFT model for a conditional sentiment continuation task, to align with human preferences and going beyond pattern matching.
 
 ## Base Model
 
-To make this series of SFT experiments more approachable to a wider learners, the following base model is picked to post-train/fine-tune for three different tasks, namely, child dialoue, binary sentiment classification, and named entity recognition (see ["Dataset and Tasks"](https://github.com/lichtjiang/llm-post-training-labs#dataset-and-tasks)):
+To make this series of SFT experiments more approachable to a wider learners, the following base model is picked to post-train/fine-tune for four different tasks, namely, child dialogue, binary sentiment classification, named entity recognition, and conditional sentiment continuation (see ["Dataset and Tasks"](https://github.com/lichtjiang/llm-post-training-labs#dataset-and-tasks)):
 
 The Hugging Face openai-community/gpt2
 
@@ -229,7 +229,11 @@ Each example is an English sentence with a class label (`0` for negative and `1`
 "the greatest musicians", 1
 ```
 
-We would use this dataset 1) for adapting GPT-2's representations to a binary sentiment classification by adding a new task-specific head; and 2) to create four new datasets for a text-completion task, dubbed "conditional sentiment continuation" – complete a review in a requested sentiment, "positive" or "negative", one for each of these four post-training methods: SFT, DPO, GRPO, and PPO.
+We would use this dataset:
+
+1) for adapting GPT-2's representations to a binary sentiment classification by adding a new task-specific head; and
+
+2) to create four new datasets for a text-completion task, dubbed "conditional sentiment continuation" – complete a review in a requested sentiment, "positive" or "negative", one for each of these four post-training methods: SFT, DPO, GRPO, and PPO.
 
 #### Credits
 
@@ -491,7 +495,7 @@ This is a 13-way token level classification for NER.
 
 ("Experiments R1, R2, R3 and R4")
 
-In this phase, we designed an interesting small task, "conditional sentiment continuation", to study different reinforcement learning approaches. The task is defined as follows.
+In this phase, we design an interesting task, "conditional sentiment continuation", to study different reinforcement learning approaches. The task is defined as follows.
 
   Create a text generation model, show it an incomplete reivew and ask the model to complete the review in a requested sentiment, which can be either "positive" or "negative". In other words, we expect from the model: given this beginning of a review, continue writing in a specified sentiment.
 
@@ -536,7 +540,7 @@ The idea behind this is that we shouldn't ask `RL` to teach GPT-2 how to write f
 
 Thus, next, we create a preference pairs dataset to fine-tune `R1` using DPO to obtain our second model in this phase, `R2`. Bascially, we use `R1` to create multiple candidate continuations and then `E1-1_2logits` ([Experiment E1-1_2logits](https://github.com/lichtjiang/llm-post-training-labs/blob/main/binary-sentiment-classification/sft_sst2_gpt2_E1-1.md)) will be used as a sentiment classifier to determine the polarity of each, based on which 'chosen' and 'rejected' pairs are created for a prompt. This preference pairs dataset is then used to train `R2` using DPO with `R1` as the reference model. As a result, `R2` learns its policies from offline experiences via DPO. By DPO, we learn which continuation is preferable given a requested sentiment. (see ["R2"](https://github.com/lichtjiang/llm-post-training-labs/blob/main/conditional-sentiment-continuation/dpo/R2.md))
 
-**Note**: For brevity, we use `E1` and `E1-1_2logits` interchangeably in phase 9 notebooks and markdown files.
+**Note**: For brevity, we use `E1-1_2logits` and `E1` interchangeably in phase 9 notebooks and markdown files.
 
 ```
 Same prompt
@@ -1200,7 +1204,7 @@ R0 - Negative:
 new. i think they were trying to be funny but also not at all like a straight up lesbian comic that has people in it who are gay, or just really hot guys as opposed of being super
 ```
 
-**R1 generation**
+**R1 (SFT) generation**
 ```
 R1 - Positive:
 special
@@ -1209,7 +1213,7 @@ R1 - Negative:
 rather weird and sad about human nature
 ```
 
-**R2 generation**
+**R2 (DPO) generation**
 ```
 R2 - Positive:
 uniquely magical
@@ -1218,7 +1222,7 @@ R2 - Negative:
 offensive about women
 ```
 
-**R3 generation**
+**R3 (GRPO) generation**
 ```
 R3 - Positive:
 very human about them
@@ -1227,7 +1231,7 @@ R3 - Negative:
 that feels less like a movie
 ```
 
-**R4 generation**
+**R4 (PPO) generation**
 ```
 R4 - Positive:
 beautiful and genuine
